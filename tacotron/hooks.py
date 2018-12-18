@@ -104,6 +104,7 @@ class MetricsSaver(tf.train.SessionRunHook):
             global_step_value, alignments, predicted_mels, ground_truth_mels, mel_length, ids, texts = run_context.session.run(
                 (self.global_step_tensor, self.alignment_tensors, self.predicted_mel_tensor,
                  self.ground_truth_mel_tensor, self.mel_length_tensor, self.id_tensor, self.text_tensor))
+            os.makedirs(os.path.join(self.writer.get_logdir(), "{}_step{:09d}/".format(self.mode, global_step_value)), exist_ok=True)
             if self.mode == tf.estimator.ModeKeys.EVAL or self.save_training_time_metrics:
                 id_strings = ",".join([str(i) for i in ids][:10])
                 result_filename = "{}_result_step{:09d}_{}.tfrecord".format(self.mode, global_step_value, id_strings)
@@ -111,7 +112,7 @@ class MetricsSaver(tf.train.SessionRunHook):
                 write_training_result(global_step_value, list(ids), list(texts), list(predicted_mels),
                                       list(ground_truth_mels), list(mel_length),
                                       alignments,
-                                      filename=os.path.join(self.writer.get_logdir(), result_filename))
+                                      filename=os.path.join(self.writer.get_logdir(), "{}_step{:09d}/".format(self.mode, global_step_value) + result_filename))
             if self.mode == tf.estimator.ModeKeys.EVAL:
                 alignments = [[a[i] for a in alignments] for i in range(alignments[0].shape[0])]
                 for _id, text, align, pred_mel, gt_mel in zip(ids, texts, alignments, predicted_mels,
@@ -119,14 +120,14 @@ class MetricsSaver(tf.train.SessionRunHook):
                     output_filename = "{}_result_step{:09d}_{:d}.png".format(self.mode,
                                                                              global_step_value, _id)
                     plot_alignment(align, text.decode('utf-8'), _id, global_step_value,
-                                   os.path.join(self.writer.get_logdir(), "alignment_" + output_filename))
+                                   os.path.join(self.writer.get_logdir(), "{}_step{:09d}/".format(self.mode, global_step_value) + "alignment_" + output_filename))
                     plot_mel(gt_mel, pred_mel, text.decode('utf-8'), _id, global_step_value,
-                             os.path.join(self.writer.get_logdir(), "mel_" + output_filename))
+                             os.path.join(self.writer.get_logdir(), "{}_step{:09d}/".format(self.mode, global_step_value) + "mel_" + output_filename))
 
     def end(self, session):
         if self.mode == tf.estimator.ModeKeys.EVAL:
             current_global_step = session.run(self.global_step_tensor)
-            with open(os.path.join(self.writer.get_logdir(), "checkpoint")) as f:
+            with open(os.path.join(self.writer.get_logdir(), "../checkpoint/checkpoint")) as f:
                 checkpoints = [ckpt for ckpt in f]
                 checkpoints = [self.extract_global_step(ckpt) for ckpt in checkpoints[1:]]
                 checkpoints = list(filter(lambda gs: gs < current_global_step, checkpoints))
@@ -134,14 +135,14 @@ class MetricsSaver(tf.train.SessionRunHook):
                     checkpoint_to_delete = checkpoints[-self.keep_eval_results_max_epoch]
                     tf.logging.info("Deleting %s results at the step %d", self.mode, checkpoint_to_delete)
                     tfrecord_filespec = os.path.join(self.writer.get_logdir(),
-                                                     "eval_result_step{:09d}_*.tfrecord".format(checkpoint_to_delete))
+                                                     "eval_step{:09d}/".format(checkpoint_to_delete) + "eval_result_step{:09d}_*.tfrecord".format(checkpoint_to_delete))
                     alignment_filespec = os.path.join(self.writer.get_logdir(),
-                                                      "alignment_eval_result_step{:09d}_*.png".format(
-                                                          checkpoint_to_delete))
+                                                      "eval_step{:09d}/".format(checkpoint_to_delete) + "alignment_eval_result_step{:09d}_*.png".format(checkpoint_to_delete))
                     mel_filespec = os.path.join(self.writer.get_logdir(),
-                                                "mel_eval_result_step{:09d}_*.png".format(checkpoint_to_delete))
+                                                "eval_step{:09d}/".format(checkpoint_to_delete) + "mel_eval_result_step{:09d}_*.png".format(checkpoint_to_delete))
                     for pathname in tf.gfile.Glob([tfrecord_filespec, alignment_filespec, mel_filespec]):
                         file_io.delete_file(pathname)
+                    os.rmdir(os.path.join(self.writer.get_logdir(), "eval_step{:09d}/".format(checkpoint_to_delete)))
 
     def extract_global_step(self, checkpoint_str):
         return int(self.checkpoint_pattern.match(checkpoint_str)[1])
